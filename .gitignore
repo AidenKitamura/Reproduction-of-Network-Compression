@@ -1,3 +1,6 @@
+# CIFAR10
+data/CIFAR10/cifar-10-batches-py/
+
 .vscode/
 .idea/
 

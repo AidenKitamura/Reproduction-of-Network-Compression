@@ -3,6 +3,16 @@ from torchvision.models import resnet18
 import data_loader_l1norm
 
 def eval(model, test_loader):
+    '''Evaluates the model and produces accuracy results.
+
+    Args:
+        model: a instance of class ResNet18
+        test_loader: A dataloader that provides the whole test dataset
+            in terms of torch tensor and grouped batch by batch
+
+    Returns:
+        A float that provides the accuracy of the model on CIFAR-10
+    '''
     correct = 0
     total = 0
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

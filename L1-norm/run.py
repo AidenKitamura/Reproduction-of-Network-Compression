@@ -24,6 +24,10 @@ args = parser.parse_args()
 l1 = L1_norm(args.step_size,args.total_epochs,args.verbose,args.rounds) #step_size,total_epochs,verbose,rounds
 
 def main():
+    '''Takes in the user input and initializes the L1_norm pruning class.
+
+    Takes in the user input, initializes the class L1_norm and execute the corresponding mode on model.
+    '''
     train_loader, test_loader = get_dataloader()
     if args.mode=='train':
         l1.round=0

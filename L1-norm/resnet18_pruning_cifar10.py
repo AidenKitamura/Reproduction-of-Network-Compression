@@ -17,6 +17,18 @@ import numpy as np
 
 
 class L1_norm(object):
+    """An example of pruning Resnet-18 on CIFAR10.
+
+    Provides methods to train, test and prune the model. 
+    Produces accuracy results and the amount of pruned parameters at the end of execution.
+
+    Attributes:
+        mode: a string indicating the mode as 'train', 'test' and 'prune'
+        batch_size: an int indicating the size of each batch
+        total_epochs: an int indicating the number of training epochs
+        step_size: an int that provides the step size for scheduler
+        round: an int that provides the index of round during pruing process
+    """
     def __init__(self,step_size,total_epochs,verbose,rounds):
         super(L1_norm, self).__init__()
         self.step_size = step_size
@@ -25,6 +37,17 @@ class L1_norm(object):
         self.rounds = rounds
 
     def train_model(self, model, train_loader, test_loader):
+        '''Train and test the model.
+
+        Trains the model and saves the model after training epochs.
+
+        Args:
+            model: a instance of class ResNet18 whose parameters will be trained
+            train_loader:A dataloader that provides the whole train dataset
+                in terms of torch tensor and grouped batch by batch
+            test_loader: A dataloader that provides the whole test dataset
+                in terms of torch tensor and grouped batch by batch
+        '''
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, self.step_size, 0.1)
@@ -54,6 +77,14 @@ class L1_norm(object):
         print("Best Acc=%.4f"%(best_acc))
 
     def prune_model(self,model):
+        '''Prune the model and saves it.
+
+        Prunes the model using Torch_pruning toolkit.
+        Produces the accuracy after pruning and the number of pruned parameters.
+
+        Args:
+            model: a instance of class ResNet18 whose parameters has been trained
+        '''
         model.cpu()
         DG = tp.DependencyGraph().build_dependency( model, torch.randn(1, 3, 32, 32) )
         def prune_conv(conv, amount=0.2):

@@ -11,6 +11,9 @@ To be filled
 ├── environment.yml
 ├── evaluate.py
 ├── LICENSE
+├── L1-norm
+│   └── torch_pruning
+│       └── prune
 ├── models
 ├── README.md
 ├── results

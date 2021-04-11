@@ -11,7 +11,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 
-from models.mobilenetv2 import MobileNetV2
+from models.mobilenetv2_1 import MobileNetV2
 
 def watch_nan(x: torch.Tensor):
     if torch.isnan(x).any():
@@ -44,6 +44,8 @@ def temp_load_data():
     
     return trainloader, testloader
 
+CURRENT_SETTING = "mobilenetV2_with_full_dynamic_pruning"
+
 if __name__ == '__main__':
     name = 'resnet34-imagenette2'
     os.makedirs('log', exist_ok=True)
@@ -67,6 +69,7 @@ if __name__ == '__main__':
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [30, 60, 80], 0.2)
         loss_function = torch.nn.CrossEntropyLoss()
         best_accuracy = 0
+        result = {"pruning_rate": pruning_rate, "pruning_setting": CURRENT_SETTING, "train":{}, 'valid':{}}
         for epoch in range(100):
             with tqdm(train_dl) as train_tqdm:
                 train_tqdm.set_description_str('{:03d} train'.format(epoch))
@@ -89,6 +92,7 @@ if __name__ == '__main__':
                     loss.backward()
                     optimizer.step()
                 logger.info('{:03d} train result: {}'.format(epoch, meter.get()))
+                result["train"][str(epoch)] = meter.get()
             with tqdm(valid_dl) as valid_tqdm:
                 valid_tqdm.set_description_str('{:03d} valid'.format(epoch))
                 net.eval()
@@ -102,11 +106,16 @@ if __name__ == '__main__':
                         meter.update(output, labels)
                         valid_tqdm.set_postfix(meter.get())
                 logger.info('{:03d} valid result: {}'.format(epoch, meter.get()))
+                result["valid"][str(epoch)] = meter.get()
             if (epoch + 1) % 10 == 0:
-                torch.save(net.state_dict(), 'ckpts/%.1f-latest.pth' % pruning_rate)
-                logger.info('saved to ckpts/%.1f-latest.pth' % pruning_rate)
+                # torch.save(net.state_dict(), 'ckpts/%.1f-latest.pth' % pruning_rate)
+                # logger.info('saved to ckpts/%.1f-latest.pth' % pruning_rate)
+                pass
             if best_accuracy < meter.top():
                 best_accuracy = meter.top()
-                torch.save(net.state_dict(), 'ckpts/%.1f-best.pth' % pruning_rate)
-                logger.info('saved to ckpts/%.1f-best.pth' % pruning_rate)
+                # torch.save(net.state_dict(), 'ckpts/%.1f-best.pth' % pruning_rate)
+                # logger.info('saved to ckpts/%.1f-best.pth' % pruning_rate)
+                result['netdict'] = net.state_dict()
+            # Every epoch, store accuracy
+            torch.save(result, f'ckpts/{pruning_rate}__{CURRENT_SETTING}.pth')
             scheduler.step()

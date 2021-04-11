@@ -71,7 +71,6 @@ class Block(nn.Module):
 
         self.conv1 = conv1x1(in_planes, planes, normalization='bn')
         self.conv2 = conv3x3(planes, planes, normalization='bn', groups=planes,stride=stride)
-        
         self.conv3 = conv1x1(planes, out_planes, normalization='bn')  # dont prune in this layer
         # self.conv3 = conv1x1(planes, out_planes, normalization='bn')
         

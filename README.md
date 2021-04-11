@@ -14,6 +14,7 @@ To be filled
 ├── L1-norm
 │   └── torch_pruning
 │       └── prune
+├── MobileV2_L1
 ├── models
 ├── README.md
 ├── results

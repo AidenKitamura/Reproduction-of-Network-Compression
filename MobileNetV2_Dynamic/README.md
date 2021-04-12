@@ -1,3 +1,16 @@
+# For CV Project
+
+There are multiple `main.py` files which have different pruning nuances.
+
+`main_1.py`: mobilenetV2_with_full_dynamic_pruning, every layer in side MobileNetV2 is using dynamic pruning
+
+`main_2.py`: mobilenetV2_block_3rd_layer_no_pruning, no dynamic pruning on the 3rd layer of Block in mobilenetV2
+
+`main_3.py`: mobilenetV2_shortcut_no_pruning
+
+`main_4.py`: mobilenetV2_shortcut_no_pruning + mobilenetV2_block_3rd_layer_no_pruning
+
+
 # PyTorch-FBS
 
 A PyTorch Implementation of **Feature Boosting and Suppression**

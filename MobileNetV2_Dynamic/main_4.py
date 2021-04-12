@@ -11,7 +11,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 
-from models.mobilenetv2_1 import MobileNetV2
+from models.mobilenetv2_4 import MobileNetV2
 
 from config import *
 
@@ -46,7 +46,7 @@ def temp_load_data():
     
     return trainloader, testloader
 
-CURRENT_SETTING = "mobilenetV2_with_full_dynamic_pruning"
+CURRENT_SETTING = "combining_2_3"
 
 if __name__ == '__main__':
     name = 'resnet34-imagenette2'
@@ -119,5 +119,5 @@ if __name__ == '__main__':
                 # logger.info('saved to ckpts/%.1f-best.pth' % pruning_rate)
                 result['netdict'] = net.state_dict()
             # Every epoch, store accuracy
-            torch.save(result, f'ckpts/{pruning_rate}__1__{CURRENT_SETTING}.pth')
+            torch.save(result, f'ckpts/{pruning_rate}__4__{CURRENT_SETTING}.pth')
             scheduler.step()

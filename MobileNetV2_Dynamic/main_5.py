@@ -11,7 +11,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 
-from models.mobilenetv2_1 import MobileNetV2
+from models.mobilenetv2_5 import MobileNetV2
 
 from config import *
 
@@ -46,7 +46,7 @@ def temp_load_data():
     
     return trainloader, testloader
 
-CURRENT_SETTING = "mobilenetV2_with_full_dynamic_pruning"
+CURRENT_SETTING = "input_channel_pruning_is_1"
 
 if __name__ == '__main__':
     name = 'resnet34-imagenette2'
@@ -66,7 +66,10 @@ if __name__ == '__main__':
         # set pruning rate
         for m in net.modules():
             if hasattr(m, 'rate'):
-                m.rate = pruning_rate
+                if m.rate == 1:
+                    m.rate = pruning_rate
+                elif m.rate == 0.99:
+                    m.rate = 1
         optimizer = torch.optim.SGD(net.parameters(), lr=0.1, momentum=0.9, weight_decay=0.0001)
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [30, 60, 80], 0.2)
         loss_function = torch.nn.CrossEntropyLoss()

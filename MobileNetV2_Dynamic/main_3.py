@@ -78,6 +78,7 @@ if __name__ == '__main__':
                 net.train()
                 meter = AccuracyMeter(topk=(1, 5))
                 for images, labels in train_tqdm:
+                    labels = torch.clamp(labels, 0, 9)
                     images = images.cuda()
                     labels = labels.cuda()
                     output = net(images)

@@ -32,8 +32,11 @@ def conv3x3(in_planes: int,
         layers.append(nn.BatchNorm2d(out_planes))
     if activation == 'relu':
         layers.append(nn.ReLU())
-    temp = ChannelPruning(*layers)
-    temp.rate = pruning_rate
+    if pruning_rate != 1:
+        temp = ChannelPruning(*layers)
+        temp.rate = pruning_rate
+    else:
+        temp = nn.Sequential(*layers)
     return temp
 
 
@@ -54,8 +57,11 @@ def conv1x1(in_planes: int,
         layers.append(nn.BatchNorm2d(out_planes))
     if activation == 'relu':
         layers.append(nn.ReLU())
-    temp = ChannelPruning(*layers)
-    temp.rate = pruning_rate
+    if pruning_rate != 1:
+        temp = ChannelPruning(*layers)
+        temp.rate = pruning_rate
+    else:
+        temp = nn.Sequential(*layers)
     return temp
 
 

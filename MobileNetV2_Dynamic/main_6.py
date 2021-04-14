@@ -124,5 +124,5 @@ if __name__ == '__main__':
                 # logger.info('saved to ckpts/%.1f-best.pth' % pruning_rate)
                 result['netdict'] = net.state_dict()
             # Every epoch, store accuracy
-            torch.save(result, f'ckpts/{pruning_rate}__5__{CURRENT_SETTING}.pth')
+            torch.save(result, f'ckpts/{pruning_rate}__6__{CURRENT_SETTING}.pth')
             scheduler.step()

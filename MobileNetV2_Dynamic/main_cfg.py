@@ -102,7 +102,7 @@ if __name__ == '__main__':
         train_dl, valid_dl = temp_load_data()
         # !important, in this case, no global pruning rate
         for pruning_rate in [1]: 
-            logger.info('set pruning rate = %.1f' % pruning_rate)
+            logger.info('set pruning rate = %.2f' % (1 - 2 ** index / 100))
             # set pruning rate
             # for m in net.modules():
             #     if hasattr(m, 'rate'):
@@ -123,6 +123,7 @@ if __name__ == '__main__':
                     meter = AccuracyMeter(topk=(1, 5))
                     for images, labels in train_tqdm:
                         images = images.cuda()
+                        labels = torch.clamp(labels, 0, 9)
                         labels = labels.cuda()
                         output = net(images)
                         watch_nan(output)

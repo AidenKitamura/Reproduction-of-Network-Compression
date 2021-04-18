@@ -1,0 +1,16 @@
+save path : ./output
+{'arch': 'resnet20', 'batch_size': 128, 'data_path': './input/cifar.python', 'dataset': 'cifar10', 'decay': 0.0005, 'dist_type': 'l2', 'epoch_prune': 1, 'epochs': 10, 'evaluate': False, 'gammas': [0.2, 0.2, 0.2], 'layer_begin': 0, 'layer_end': 54, 'layer_inter': 3, 'learning_rate': 0.1, 'manualSeed': 1329, 'momentum': 0.9, 'ngpu': 1, 'pretrain_path': '', 'print_freq': 200, 'rate_dist': 0.1, 'rate_norm': 1.0, 'resume': '', 'save_path': './output', 'schedule': [60, 120, 160], 'start_epoch': 0, 'use_cuda': True, 'use_pretrain': False, 'use_state_dict': False, 'workers': 2}
+Random Seed: 1329
+python version : 3.6.10 | packaged by conda-forge | (default, Apr 24 2020, 16:44:11)  [GCC 7.3.0]
+torch  version : 1.4.0
+cudnn  version : 7603
+Norm Pruning Rate: 1.0
+Distance Pruning Rate: 0.1
+Layer Begin: 0
+Layer End: 54
+Layer Inter: 3
+Epoch prune: 1
+use pretrain: False
+Pretrain path: 
+Dist type: l2
+=> creating model 'resnet20'

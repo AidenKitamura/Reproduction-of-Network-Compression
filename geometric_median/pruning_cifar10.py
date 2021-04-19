@@ -13,6 +13,7 @@ import numpy as np
 import pickle
 from scipy.spatial import distance
 import pdb
+import time
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
@@ -48,8 +49,7 @@ parser.add_argument('--workers', type=int, default=2, help='number of data loadi
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 # compress rate
 parser.add_argument('--rate_norm', type=float, default=0.9, help='the remaining ratio of pruning based on Norm')
-parser.add_argument('--rate_dist', type=float, default=0.1, help='the reducing ratio of pruning based on Distance')
-
+parser.add_argument('--rate_dist', type=float, required=True, default=0.1, help='the reducing ratio of pruning based on Distance')
 parser.add_argument('--layer_begin', type=int, default=1, help='compress layer of model')
 parser.add_argument('--layer_end', type=int, default=1, help='compress layer of model')
 parser.add_argument('--layer_inter', type=int, default=1, help='compress layer of model')
@@ -58,6 +58,7 @@ parser.add_argument('--use_state_dict', dest='use_state_dict', action='store_tru
 parser.add_argument('--use_pretrain', dest='use_pretrain', action='store_true', help='use pre-trained model or not')
 parser.add_argument('--pretrain_path', default='', type=str, help='..path of pre-trained model')
 parser.add_argument('--dist_type', default='l2', type=str, choices=['l2', 'l1', 'cos'], help='distance type of GM')
+parser.add_argument('--prune_method', required=True, default='constant', type=str, choices=['constant', 'linear', 'ex'], help='pruning rate method')
 
 args = parser.parse_args()
 args.use_cuda = args.ngpu > 0 and torch.cuda.is_available()
@@ -69,7 +70,6 @@ torch.manual_seed(args.manualSeed)
 if args.use_cuda:
     torch.cuda.manual_seed_all(args.manualSeed)
 cudnn.benchmark = True
-
 
 def main():
     # Init logger
@@ -249,7 +249,7 @@ def main():
         train_acc, train_los = train(train_loader, net, criterion, optimizer, epoch, log, m)
 
         # evaluate on validation set
-        val_acc_1, val_los_1 = validate(test_loader, net, criterion, log)
+#         val_acc_1, val_los_1 = validate(test_loader, net, criterion, log)
         if epoch % args.epoch_prune == 0 or epoch == args.epochs - 1:
             m.model = net
             m.if_zero()
@@ -278,8 +278,13 @@ def main():
         start_time = time.time()
         recorder.plot_curve(os.path.join(args.save_path, 'curve.png'))
 
+    start = time.time()
+    val_acc_2, val_los_2 = validate(test_loader, net, criterion, log)
+    print("Acc=%.4f\n"%(val_acc_2))
+    print(f"Run time: {(time.time() - start):.3f} s")
+    torch.save(net, 'geometric_median-round%s%d.pth'%(args.prune_method, args.rate_dist))
     log.close()
-
+    
 
 # train function (forward, backward, update)
 def train(train_loader, model, criterion, optimizer, epoch, log, m):
@@ -333,10 +338,12 @@ def train(train_loader, model, criterion, optimizer, epoch, log, m):
                       'Prec@5 {top5.val:.3f} ({top5.avg:.3f})   '.format(
                 epoch, i, len(train_loader), batch_time=batch_time,
                 data_time=data_time, loss=losses, top1=top1, top5=top5) + time_string(), log)
+#     print_log(
+#         '  **Train** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
+#                                                                                               error1=100 - top1.avg),
+#         log)
     print_log(
-        '  **Train** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
-                                                                                              error1=100 - top1.avg),
-        log)
+            '  **Train** Accuracy@1 {top1.avg:.3f}'.format(top1=top1),log)
     return top1.avg, losses.avg
 
 
@@ -469,7 +476,7 @@ class Mask:
             for x in range(0, len(filter_index)):
                 codebook[filter_index[x] * kernel_length: (filter_index[x] + 1) * kernel_length] = 0
 
-            print("filter codebook done")
+#             print("filter codebook done")
         else:
             pass
         return codebook
@@ -539,17 +546,17 @@ class Mask:
             similar_small_index = similar_sum.argsort()[:  similar_pruned_num]
             similar_index_for_filter = [filter_large_index[i] for i in similar_small_index]
 
-            print('filter_large_index', filter_large_index)
-            print('filter_small_index', filter_small_index)
-            print('similar_sum', similar_sum)
-            print('similar_large_index', similar_large_index)
-            print('similar_small_index', similar_small_index)
-            print('similar_index_for_filter', similar_index_for_filter)
+#             print('filter_large_index', filter_large_index)
+#             print('filter_small_index', filter_small_index)
+#             print('similar_sum', similar_sum)
+#             print('similar_large_index', similar_large_index)
+#             print('similar_small_index', similar_small_index)
+#             print('similar_index_for_filter', similar_index_for_filter)
             kernel_length = weight_torch.size()[1] * weight_torch.size()[2] * weight_torch.size()[3]
             for x in range(0, len(similar_index_for_filter)):
                 codebook[
                 similar_index_for_filter[x] * kernel_length: (similar_index_for_filter[x] + 1) * kernel_length] = 0
-            print("similar index done")
+#             print("similar index done")
         else:
             pass
         return codebook
@@ -577,23 +584,47 @@ class Mask:
             self.compress_rate[key] = rate_norm_per_layer
             self.distance_rate[key] = rate_dist_per_layer
         # different setting for  different architecture
-        if args.arch == 'resnet20':
-            last_index = 57
-        elif args.arch == 'resnet32':
-            last_index = 93
-        elif args.arch == 'resnet56':
-            last_index = 165
-        elif args.arch == 'resnet110':
-            last_index = 327
-        # to jump the last fc layer
-        self.mask_index = [x for x in range(0, last_index, 3)]
-
-    #        self.mask_index =  [x for x in range (0,330,3)]
+#         if args.arch == 'resnet20':
+#             last_index = 57
+#         elif args.arch == 'resnet32':
+#             last_index = 93
+#         elif args.arch == 'resnet56':
+#             last_index = 165
+#         elif args.arch == 'resnet110':
+#             last_index = 327
+#         # to jump the last fc layer
+#         self.mask_index = [x for x in range(0, last_index, 3)]
+#        self.mask_index =  [x for x in range (0,330,3)]
+        n = rate_dist_per_layer
+        p_rate_list_constant = [n]*17
+        p_rate_list_linear = [0,n,n,n*2,n*2,n*2,n*3,n*3,n*3,n*3,n*4,n*4,n*4,n*5,n*5,n*5,n*6]
+        n = 1 - rate_dist_per_layer # remaining rate
+        r_rate_list = [1,n,n,n**2,n**2,n**2,n**3,n**3,n**3,n**3,n**4,n**4,n**4,n**5,n**5,n**5,n**6]
+        p_rate_list_ex = [(1-x) for x in r_rate_list]
+        counter = 0
+        counter2 = 0
+        self.mask_index = []
+        for name, param in self.model.named_parameters():
+            if 'module.layers.' in name and ('conv1' in name or 'conv2' in name):
+                self.mask_index.append(counter)
+                if args.prune_method == 'constant':
+                    self.distance_rate[counter] = p_rate_list_constant[int(counter2)]
+                elif args.prune_method == 'linear':
+                    self.distance_rate[counter] = p_rate_list_linear[int(counter2)]
+                elif args.prune_method == 'ex':
+                    self.distance_rate[counter] = p_rate_list_ex[int(counter2)]
+                counter2 += 0.5
+            counter += 1       
 
     def init_mask(self, rate_norm_per_layer, rate_dist_per_layer, dist_type):
         self.init_rate(rate_norm_per_layer, rate_dist_per_layer)
+        counter = 0
         for index, item in enumerate(self.model.parameters()):
+#             print(index)
             if index in self.mask_index:
+#                 print('***************************************%d***************************************'%index)
+#                 print(item)
+                counter += 1
                 # mask for norm criterion
                 self.mat[index] = self.get_filter_codebook(item.data, self.compress_rate[index],
                                                            self.model_length[index])
@@ -654,3 +685,4 @@ class Mask:
 
 if __name__ == '__main__':
     main()
+

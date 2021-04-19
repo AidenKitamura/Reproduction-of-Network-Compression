@@ -145,3 +145,5 @@ cython_debug/
 
 data/
 .DS_Store
+
+result_data/

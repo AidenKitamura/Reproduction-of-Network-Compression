@@ -17,11 +17,11 @@ def get_dataloader():
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-        ]), download=True),batch_size=1, num_workers=2)
+        ]), download=True),batch_size=256, num_workers=2)
     test_loader = torch.utils.data.DataLoader(
         CIFAR10('./data', train=False, transform=transforms.Compose([
             transforms.ToTensor(),
-        ]),download=True),batch_size=1, num_workers=2)
+        ]),download=True),batch_size=256, num_workers=2)
     return train_loader, test_loader
 
 if __name__=='__main__':

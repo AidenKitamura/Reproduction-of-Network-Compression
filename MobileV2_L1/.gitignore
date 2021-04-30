@@ -1,7 +1,0 @@
-__pycache__
-data
-*.pth
-.vscode
-*.egg-info
-dist
-build

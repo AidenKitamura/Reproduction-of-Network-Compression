@@ -1,4 +1,4 @@
 # -*- coding=utf-8 -*-
 
-from .custom import *
+from .channelprune import *
 from .resnet import *

@@ -104,9 +104,15 @@ def gen_config(rate, strategy):
             if 1-i*rate < 0:
                 # cannot be negative
                 return False
-    else:
+    elif strategy == 'exp':
         for i in range(len(base)):
             output.append(base[i] + (((1-rate)**i,(1-rate)**i,),))
+    else:
+        for i in range(len(base)):
+            if i == 0:
+                output.append(base[i] + ((1,1,),))
+                continue
+            output.append(base[i] + ((1-rate,1-rate,),))
     return output
 
 import argparse
@@ -123,7 +129,7 @@ if __name__ == '__main__':
     if args.rate > 1 or args.rate < 0:
         print("Invalid pruning rate.")
         sys.exit()
-    if args.strategy not in ['linear', 'exp']:
+    if args.strategy not in ['linear', 'exp', 'constant']:
         print("Invalid pruning strategy.")
         sys.exit()
     # generate config
@@ -131,8 +137,7 @@ if __name__ == '__main__':
     if not current_config:
         print("Invalid pruning rate.")
         sys.exit()
-    # print(current_config)
-# for index in range(len(cfgs)):
+    print(current_config)
     CURRENT_SETTING = f'rate_{args.rate}_ strategy_{args.strategy}' # "rate" + str(2 ** index / 100) + "_EXP"
     os.makedirs('log', exist_ok=True)
     os.makedirs('ckpts', exist_ok=True)

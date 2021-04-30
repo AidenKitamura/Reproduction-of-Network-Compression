@@ -7,7 +7,6 @@ import torch.backends.cudnn as cudnn
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
 from utils import AverageMeter, RecorderMeter, time_string, convert_secs2time, timing
-import models
 import mobilenetv2
 import numpy as np
 import pickle
@@ -15,21 +14,16 @@ from scipy.spatial import distance
 import pdb
 import time
 
-model_names = sorted(name for name in models.__dict__
-                     if name.islower() and not name.startswith("__")
-                     and callable(models.__dict__[name]))
 
 parser = argparse.ArgumentParser(description='Trains ResNeXt on CIFAR or ImageNet',
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('data_path', type=str, help='Path to dataset')
 parser.add_argument('--dataset', type=str, choices=['cifar10', 'cifar100', 'imagenet', 'svhn', 'stl10'],
                     help='Choose between Cifar10/100 and ImageNet.')
-parser.add_argument('--arch', metavar='ARCH', default='resnet18', choices=model_names,
-                    help='model architecture: ' + ' | '.join(model_names) + ' (default: resnext29_8_64)')
 # Optimization options
 parser.add_argument('--epochs', type=int, default=300, help='Number of epochs to train.')
 parser.add_argument('--batch_size', type=int, default=128, help='Batch size.')
-parser.add_argument('--learning_rate', type=float, default=0.1, help='The Learning Rate.')
+parser.add_argument('--lr', type=float, default=0.1, help='The Learning Rate.')
 parser.add_argument('--momentum', type=float, default=0.9, help='Momentum.')
 parser.add_argument('--decay', type=float, default=0.0005, help='Weight decay (L2 penalty).')
 parser.add_argument('--schedule', type=int, nargs='+', default=[150, 225],
@@ -120,27 +114,14 @@ def main():
         train_data = dset.CIFAR100(args.data_path, train=True, transform=train_transform, download=True)
         test_data = dset.CIFAR100(args.data_path, train=False, transform=test_transform, download=True)
         num_classes = 100
-    elif args.dataset == 'svhn':
-        train_data = dset.SVHN(args.data_path, split='train', transform=train_transform, download=True)
-        test_data = dset.SVHN(args.data_path, split='test', transform=test_transform, download=True)
-        num_classes = 10
-    elif args.dataset == 'stl10':
-        train_data = dset.STL10(args.data_path, split='train', transform=train_transform, download=True)
-        test_data = dset.STL10(args.data_path, split='test', transform=test_transform, download=True)
-        num_classes = 10
-    elif args.dataset == 'imagenet':
-        assert False, 'Do not finish imagenet code'
-    else:
-        assert False, 'Do not support dataset : {}'.format(args.dataset)
 
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True,
                                                num_workers=args.workers, pin_memory=True)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=False,
                                               num_workers=args.workers, pin_memory=True)
 
-    print_log("=> creating model '{}'".format(args.arch), log)
+
     # Init model, criterion, and optimizer
-#     net = models.__dict__[args.arch](num_classes)
     net = mobilenetv2.MobileNetV2()
     model_loaded = torch.load('ckpt.pth')
     mobile = model_loaded['net'].copy()
@@ -154,47 +135,14 @@ def main():
     # define loss function (criterion) and optimizer
     criterion = torch.nn.CrossEntropyLoss()
 
-    optimizer = torch.optim.SGD(net.parameters(), state['learning_rate'], momentum=state['momentum'],
+    optimizer = torch.optim.SGD(net.parameters(), state['lr'], momentum=state['momentum'],
                                 weight_decay=state['decay'], nesterov=True)
 
     if args.use_cuda:
         net.cuda()
         criterion.cuda()
 
-    if args.use_pretrain:
-        if os.path.isfile(args.pretrain_path):
-            print_log("=> loading pretrain model '{}'".format(args.pretrain_path), log)
-        else:
-            dir = '/data/yahe/cifar10_base/'
-            # dir = '/data/uts521/yang/progress/cifar10_base/'
-            whole_path = dir + 'cifar10_' + args.arch + '_base'
-            args.pretrain_path = whole_path + '/checkpoint.pth.tar'
-            print_log("Pretrain path: {}".format(args.pretrain_path), log)
-        pretrain = torch.load(args.pretrain_path)
-        if args.use_state_dict:
-            net.load_state_dict(pretrain['state_dict'])
-        else:
-            net = pretrain['state_dict']
-
     recorder = RecorderMeter(args.epochs)
-    # optionally resume from a checkpoint
-    if args.resume:
-        if os.path.isfile(args.resume):
-            print_log("=> loading checkpoint '{}'".format(args.resume), log)
-            checkpoint = torch.load(args.resume)
-            recorder = checkpoint['recorder']
-            args.start_epoch = checkpoint['epoch']
-            if args.use_state_dict:
-                net.load_state_dict(checkpoint['state_dict'])
-            else:
-                net = checkpoint['state_dict']
-
-            optimizer.load_state_dict(checkpoint['optimizer'])
-            print_log("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']), log)
-        else:
-            print_log("=> no checkpoint found at '{}'".format(args.resume), log)
-    else:
-        print_log("=> do not use any checkpoint for {} model".format(args.arch), log)
 
     if args.evaluate:
         time1 = time.time()
@@ -210,9 +158,9 @@ def main():
     print("reducing ratio of pruning : Distance is %f" % args.rate_dist)
     print("total remaining ratio is %f" % (args.rate_norm - args.rate_dist))
 
-    val_acc_1, val_los_1 = validate(test_loader, net, criterion, log)
+    validation_accurate_1, validation_loss_1 = validate(test_loader, net, criterion, log)
 
-    print(" accu before is: %.3f %%" % val_acc_1)
+    print(" accu before is: %.3f %%" % validation_accurate_1)
 
     m.model = net
 
@@ -224,32 +172,32 @@ def main():
     #    m.if_zero()
     if args.use_cuda:
         net = net.cuda()
-    val_acc_2, val_los_2 = validate(test_loader, net, criterion, log)
-    print(" accu after is: %s %%" % val_acc_2)
+    validation_accurate_2, validation_loss_2 = validate(test_loader, net, criterion, log)
+    print(" accu after is: %s %%" % validation_accurate_2)
 
     # Main loop
     start_time = time.time()
     epoch_time = AverageMeter()
-    small_filter_index = []
-    large_filter_index = []
+    small_filter_idx = []
+    large_filter_idx = []
 
     for epoch in range(args.start_epoch, args.epochs):
-        current_learning_rate = adjust_learning_rate(optimizer, epoch, args.gammas, args.schedule)
+        current_lr = adjust_lr(optimizer, epoch, args.gammas, args.schedule)
 
-        need_hour, need_mins, need_secs = convert_secs2time(epoch_time.avg * (args.epochs - epoch))
-        need_time = '[Need: {:02d}:{:02d}:{:02d}]'.format(need_hour, need_mins, need_secs)
+        required_hour, required_mins, required_secs = convert_secs2time(epoch_time.avg * (args.epochs - epoch))
+        required_time = '[required: {:02d}:{:02d}:{:02d}]'.format(required_hour, required_mins, required_secs)
 
         print_log(
-            '\n==>>{:s} [Epoch={:03d}/{:03d}] {:s} [learning_rate={:6.4f}]'.format(time_string(), epoch, args.epochs,
-                                                                                   need_time, current_learning_rate) \
+            '\n==>>{:s} [Epoch={:03d}/{:03d}] {:s} [lr={:6.4f}]'.format(time_string(), epoch, args.epochs,
+                                                                                   required_time, current_lr) \
             + ' [Best : Accuracy={:.2f}, Error={:.2f}]'.format(recorder.max_accuracy(False),
                                                                100 - recorder.max_accuracy(False)), log)
 
         # train for one epoch
-        train_acc, train_los = train(train_loader, net, criterion, optimizer, epoch, log, m)
+        train_accurate, train_loss = train(train_loader, net, criterion, optimizer, epoch, log, m)
 
         # evaluate on validation set
-#         val_acc_1, val_los_1 = validate(test_loader, net, criterion, log)
+#         validation_accurate_1, validation_loss_1 = validate(test_loader, net, criterion, log)
         if epoch % args.epoch_prune == 0 or epoch == args.epochs - 1:
             m.model = net
             m.if_zero()
@@ -261,17 +209,16 @@ def main():
             if args.use_cuda:
                 net = net.cuda()
 
-        val_acc_2, val_los_2 = validate(test_loader, net, criterion, log)
+        validation_accurate_2, validation_loss_2 = validate(test_loader, net, criterion, log)
 
-        is_best = recorder.update(epoch, train_los, train_acc, val_los_2, val_acc_2)
+        best = recorder.update(epoch, train_loss, train_accurate, validation_loss_2, validation_accurate_2)
 
         save_checkpoint({
             'epoch': epoch + 1,
-            'arch': args.arch,
             'state_dict': net,
             'recorder': recorder,
             'optimizer': optimizer.state_dict(),
-        }, is_best, args.save_path, 'checkpoint.pth.tar')
+        }, best, args.save_path, 'checkpoint.pth.tar')
 
         # measure elapsed time
         epoch_time.update(time.time() - start_time)
@@ -279,10 +226,10 @@ def main():
         recorder.plot_curve(os.path.join(args.save_path, 'curve.png'))
 
     start = time.time()
-    val_acc_2, val_los_2 = validate(test_loader, net, criterion, log)
-    print("Acc=%.4f\n"%(val_acc_2))
+    validation_accurate_2, validation_loss_2 = validate(test_loader, net, criterion, log)
+    print("Acc=%.4f\n"%(validation_accurate_2))
     print(f"Run time: {(time.time() - start):.3f} s")
-    torch.save(net, 'geometric_median-round%s%d.pth'%(args.prune_method, args.rate_dist))
+    torch.save(net, 'geometric_median-%s%.2f.pth'%(args.prune_method, args.rate_dist))
     log.close()
     
 
@@ -312,10 +259,10 @@ def train(train_loader, model, criterion, optimizer, epoch, log, m):
         loss = criterion(output, target_var)
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
+        precision1, precision5 = accuracy(output.data, target, topk=(1, 5))
         losses.update(loss.data, input.size(0))
-        top1.update(prec1, input.size(0))
-        top5.update(prec5, input.size(0))
+        top1.update(precision1, input.size(0))
+        top5.update(precision5, input.size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -334,12 +281,12 @@ def train(train_loader, model, criterion, optimizer, epoch, log, m):
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})   '
                       'Data {data_time.val:.3f} ({data_time.avg:.3f})   '
                       'Loss {loss.val:.4f} ({loss.avg:.4f})   '
-                      'Prec@1 {top1.val:.3f} ({top1.avg:.3f})   '
-                      'Prec@5 {top5.val:.3f} ({top5.avg:.3f})   '.format(
+                      'precision@1 {top1.val:.3f} ({top1.avg:.3f})   '
+                      'precision@5 {top5.val:.3f} ({top5.avg:.3f})   '.format(
                 epoch, i, len(train_loader), batch_time=batch_time,
                 data_time=data_time, loss=losses, top1=top1, top5=top5) + time_string(), log)
 #     print_log(
-#         '  **Train** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
+#         '  **Train** precision@1 {top1.avg:.3f} precision@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
 #                                                                                               error1=100 - top1.avg),
 #         log)
     print_log(
@@ -367,12 +314,12 @@ def validate(val_loader, model, criterion, log):
         loss = criterion(output, target_var)
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
+        precision1, precision5 = accuracy(output.data, target, topk=(1, 5))
         losses.update(loss.data, input.size(0))
-        top1.update(prec1, input.size(0))
-        top5.update(prec5, input.size(0))
+        top1.update(precision1, input.size(0))
+        top5.update(precision5, input.size(0))
 
-    print_log('  **Test** Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
+    print_log('  **Test** precision@1 {top1.avg:.3f} precision@5 {top5.avg:.3f} Error@1 {error1:.3f}'.format(top1=top1, top5=top5,
                                                                                                    error1=100 - top1.avg),
               log)
 
@@ -385,17 +332,17 @@ def print_log(print_string, log):
     log.flush()
 
 
-def save_checkpoint(state, is_best, save_path, filename):
+def save_checkpoint(state, best, save_path, filename):
     filename = os.path.join(save_path, filename)
     torch.save(state, filename)
-    if is_best:
+    if best:
         bestname = os.path.join(save_path, 'model_best.pth.tar')
         shutil.copyfile(filename, bestname)
 
 
-def adjust_learning_rate(optimizer, epoch, gammas, schedule):
+def adjust_lr(optimizer, epoch, gammas, schedule):
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    lr = args.learning_rate
+    lr = args.lr
     assert len(gammas) == len(schedule), "length of gammas and schedule should be equal"
     for (gamma, step) in zip(gammas, schedule):
         if (epoch >= step):
@@ -408,7 +355,7 @@ def adjust_learning_rate(optimizer, epoch, gammas, schedule):
 
 
 def accuracy(output, target, topk=(1,)):
-    """Computes the precision@k for the specified values of k"""
+    """Computes the precisionision@k for the specified values of k"""
     maxk = max(topk)
     batch_size = target.size(0)
 
@@ -441,9 +388,9 @@ class Mask:
         self.distance_rate = {}
         self.mat = {}
         self.model = model
-        self.mask_index = []
-        self.filter_small_index = {}
-        self.filter_large_index = {}
+        self.mask_idx = []
+        self.filter_small_idx = {}
+        self.filter_large_idx = {}
         self.similar_matrix = {}
         self.norm_matrix = {}
 
@@ -467,39 +414,39 @@ class Mask:
         if len(weight_torch.size()) == 4:
             filter_pruned_num = int(weight_torch.size()[0] * (1 - compress_rate))
             weight_vec = weight_torch.view(weight_torch.size()[0], -1)
-            norm2 = torch.norm(weight_vec, 2, 1)
-            norm2_np = norm2.cpu().numpy()
-            filter_index = norm2_np.argsort()[:filter_pruned_num]
+            norm_2 = torch.norm(weight_vec, 2, 1)
+            norm_2_np = norm_2.cpu().numpy()
+            filter_idx = norm_2_np.argsort()[:filter_pruned_num]
             #            norm1_sort = np.sort(norm1_np)
             #            threshold = norm1_sort[int (weight_torch.size()[0] * (1-compress_rate) )]
             kernel_length = weight_torch.size()[1] * weight_torch.size()[2] * weight_torch.size()[3]
-            for x in range(0, len(filter_index)):
-                codebook[filter_index[x] * kernel_length: (filter_index[x] + 1) * kernel_length] = 0
+            for x in range(0, len(filter_idx)):
+                codebook[filter_idx[x] * kernel_length: (filter_idx[x] + 1) * kernel_length] = 0
 
 #             print("filter codebook done")
         else:
             pass
         return codebook
 
-    def get_filter_index(self, weight_torch, compress_rate, length):
+    def get_filter_idx(self, weight_torch, compress_rate, length):
         if len(weight_torch.size()) == 4:
             filter_pruned_num = int(weight_torch.size()[0] * (1 - compress_rate))
             weight_vec = weight_torch.view(weight_torch.size()[0], -1)
             # norm1 = torch.norm(weight_vec, 1, 1)
             # norm1_np = norm1.cpu().numpy()
-            norm2 = torch.norm(weight_vec, 2, 1)
-            norm2_np = norm2.cpu().numpy()
-            filter_small_index = []
-            filter_large_index = []
-            filter_large_index = norm2_np.argsort()[filter_pruned_num:]
-            filter_small_index = norm2_np.argsort()[:filter_pruned_num]
+            norm_2 = torch.norm(weight_vec, 2, 1)
+            norm_2_np = norm_2.cpu().numpy()
+            filter_small_idx = []
+            filter_large_idx = []
+            filter_large_idx = norm_2_np.argsort()[filter_pruned_num:]
+            filter_small_idx = norm_2_np.argsort()[:filter_pruned_num]
             #            norm1_sort = np.sort(norm1_np)
             #            threshold = norm1_sort[int (weight_torch.size()[0] * (1-compress_rate) )]
             kernel_length = weight_torch.size()[1] * weight_torch.size()[2] * weight_torch.size()[3]
-            # print("filter index done")
+            # print("filter idx done")
         else:
             pass
-        return filter_small_index, filter_large_index
+        return filter_small_idx, filter_large_idx
 
     # optimize for fast ccalculation
     def get_filter_similar(self, weight_torch, compress_rate, distance_rate, length, dist_type="l2"):
@@ -515,15 +462,15 @@ class Mask:
             elif dist_type == "l1":
                 norm = torch.norm(weight_vec, 1, 1)
                 norm_np = norm.cpu().numpy()
-            filter_small_index = []
-            filter_large_index = []
-            filter_large_index = norm_np.argsort()[filter_pruned_num:]
-            filter_small_index = norm_np.argsort()[:filter_pruned_num]
+            filter_small_idx = []
+            filter_large_idx = []
+            filter_large_idx = norm_np.argsort()[filter_pruned_num:]
+            filter_small_idx = norm_np.argsort()[:filter_pruned_num]
 
             # # distance using pytorch function
-            # similar_matrix = torch.zeros((len(filter_large_index), len(filter_large_index)))
-            # for x1, x2 in enumerate(filter_large_index):
-            #     for y1, y2 in enumerate(filter_large_index):
+            # similar_matrix = torch.zeros((len(filter_large_idx), len(filter_large_idx)))
+            # for x1, x2 in enumerate(filter_large_idx):
+            #     for y1, y2 in enumerate(filter_large_idx):
             #         # cos = torch.nn.CosineSimilarity(dim=1, eps=1e-6)
             #         # similar_matrix[x1, y1] = cos(weight_vec[x2].view(1, -1), weight_vec[y2].view(1, -1))[0]
             #         pdist = torch.nn.PairwiseDistance(p=2)
@@ -532,31 +479,31 @@ class Mask:
             # similar_sum = torch.sum(torch.abs(similar_matrix), 0).numpy()
 
             # distance using numpy function
-            indices = torch.LongTensor(filter_large_index).cuda()
-            weight_vec_after_norm = torch.index_select(weight_vec, 0, indices).cpu().numpy()
+            indices = torch.LongTensor(filter_large_idx).cuda()
+            weight_after_norm = torch.index_select(weight_vec, 0, indices).cpu().numpy()
             # for euclidean distance
             if dist_type == "l2" or "l1":
-                similar_matrix = distance.cdist(weight_vec_after_norm, weight_vec_after_norm, 'euclidean')
+                similar_matrix = distance.cdist(weight_after_norm, weight_after_norm, 'euclidean')
             elif dist_type == "cos":  # for cos similarity
-                similar_matrix = 1 - distance.cdist(weight_vec_after_norm, weight_vec_after_norm, 'cosine')
+                similar_matrix = 1 - distance.cdist(weight_after_norm, weight_after_norm, 'cosine')
             similar_sum = np.sum(np.abs(similar_matrix), axis=0)
 
-            # for distance similar: get the filter index with largest similarity == small distance
-            similar_large_index = similar_sum.argsort()[similar_pruned_num:]
-            similar_small_index = similar_sum.argsort()[:  similar_pruned_num]
-            similar_index_for_filter = [filter_large_index[i] for i in similar_small_index]
+            # for distance similar: get the filter idx with largest similarity == small distance
+            similar_large_idx = similar_sum.argsort()[similar_pruned_num:]
+            similar_small_idx = similar_sum.argsort()[:  similar_pruned_num]
+            similar_idx_for_filter = [filter_large_idx[i] for i in similar_small_idx]
 
-#             print('filter_large_index', filter_large_index)
-#             print('filter_small_index', filter_small_index)
+#             print('filter_large_idx', filter_large_idx)
+#             print('filter_small_idx', filter_small_idx)
 #             print('similar_sum', similar_sum)
-#             print('similar_large_index', similar_large_index)
-#             print('similar_small_index', similar_small_index)
-#             print('similar_index_for_filter', similar_index_for_filter)
+#             print('similar_large_idx', similar_large_idx)
+#             print('similar_small_idx', similar_small_idx)
+#             print('similar_idx_for_filter', similar_idx_for_filter)
             kernel_length = weight_torch.size()[1] * weight_torch.size()[2] * weight_torch.size()[3]
-            for x in range(0, len(similar_index_for_filter)):
+            for x in range(0, len(similar_idx_for_filter)):
                 codebook[
-                similar_index_for_filter[x] * kernel_length: (similar_index_for_filter[x] + 1) * kernel_length] = 0
-#             print("similar index done")
+                similar_idx_for_filter[x] * kernel_length: (similar_idx_for_filter[x] + 1) * kernel_length] = 0
+#             print("similar idx done")
         else:
             pass
         return codebook
@@ -566,35 +513,23 @@ class Mask:
         return x
 
     def init_length(self):
-        for index, item in enumerate(self.model.parameters()):
-            self.model_size[index] = item.size()
+        for idx, item in enumerate(self.model.parameters()):
+            self.model_size[idx] = item.size()
 
-        for index1 in self.model_size:
-            for index2 in range(0, len(self.model_size[index1])):
-                if index2 == 0:
-                    self.model_length[index1] = self.model_size[index1][0]
+        for idx1 in self.model_size:
+            for idx2 in range(0, len(self.model_size[idx1])):
+                if idx2 == 0:
+                    self.model_length[idx1] = self.model_size[idx1][0]
                 else:
-                    self.model_length[index1] *= self.model_size[index1][index2]
+                    self.model_length[idx1] *= self.model_size[idx1][idx2]
 
     def init_rate(self, rate_norm_per_layer, rate_dist_per_layer):
-        for index, item in enumerate(self.model.parameters()):
-            self.compress_rate[index] = 1
-            self.distance_rate[index] = 1
+        for idx, item in enumerate(self.model.parameters()):
+            self.compress_rate[idx] = 1
+            self.distance_rate[idx] = 1
         for key in range(args.layer_begin, args.layer_end + 1, args.layer_inter):
             self.compress_rate[key] = rate_norm_per_layer
             self.distance_rate[key] = rate_dist_per_layer
-        # different setting for  different architecture
-#         if args.arch == 'resnet20':
-#             last_index = 57
-#         elif args.arch == 'resnet32':
-#             last_index = 93
-#         elif args.arch == 'resnet56':
-#             last_index = 165
-#         elif args.arch == 'resnet110':
-#             last_index = 327
-#         # to jump the last fc layer
-#         self.mask_index = [x for x in range(0, last_index, 3)]
-#        self.mask_index =  [x for x in range (0,330,3)]
         n = rate_dist_per_layer
         p_rate_list_constant = [n]*17
         p_rate_list_linear = [0,n,n,n*2,n*2,n*2,n*3,n*3,n*3,n*3,n*4,n*4,n*4,n*5,n*5,n*5,n*6]
@@ -603,10 +538,10 @@ class Mask:
         p_rate_list_ex = [(1-x) for x in r_rate_list]
         counter = 0
         counter2 = 0
-        self.mask_index = []
+        self.mask_idx = []
         for name, param in self.model.named_parameters():
             if 'module.layers.' in name and ('conv1' in name or 'conv2' in name):
-                self.mask_index.append(counter)
+                self.mask_idx.append(counter)
                 if args.prune_method == 'constant':
                     self.distance_rate[counter] = p_rate_list_constant[int(counter2)]
                 elif args.prune_method == 'linear':
@@ -619,64 +554,64 @@ class Mask:
     def init_mask(self, rate_norm_per_layer, rate_dist_per_layer, dist_type):
         self.init_rate(rate_norm_per_layer, rate_dist_per_layer)
         counter = 0
-        for index, item in enumerate(self.model.parameters()):
-#             print(index)
-            if index in self.mask_index:
-#                 print('***************************************%d***************************************'%index)
+        for idx, item in enumerate(self.model.parameters()):
+#             print(idx)
+            if idx in self.mask_idx:
+#                 print('***************************************%d***************************************'%idx)
 #                 print(item)
                 counter += 1
                 # mask for norm criterion
-                self.mat[index] = self.get_filter_codebook(item.data, self.compress_rate[index],
-                                                           self.model_length[index])
-                self.mat[index] = self.convert2tensor(self.mat[index])
+                self.mat[idx] = self.get_filter_codebook(item.data, self.compress_rate[idx],
+                                                           self.model_length[idx])
+                self.mat[idx] = self.convert2tensor(self.mat[idx])
                 if args.use_cuda:
-                    self.mat[index] = self.mat[index].cuda()
+                    self.mat[idx] = self.mat[idx].cuda()
 
-                # # get result about filter index
-                # self.filter_small_index[index], self.filter_large_index[index] = \
-                #     self.get_filter_index(item.data, self.compress_rate[index], self.model_length[index])
+                # # get result about filter idx
+                # self.filter_small_idx[idx], self.filter_large_idx[idx] = \
+                #     self.get_filter_idx(item.data, self.compress_rate[idx], self.model_length[idx])
 
                 # mask for distance criterion
-                self.similar_matrix[index] = self.get_filter_similar(item.data, self.compress_rate[index],
-                                                                     self.distance_rate[index],
-                                                                     self.model_length[index], dist_type=dist_type)
-                self.similar_matrix[index] = self.convert2tensor(self.similar_matrix[index])
+                self.similar_matrix[idx] = self.get_filter_similar(item.data, self.compress_rate[idx],
+                                                                     self.distance_rate[idx],
+                                                                     self.model_length[idx], dist_type=dist_type)
+                self.similar_matrix[idx] = self.convert2tensor(self.similar_matrix[idx])
                 if args.use_cuda:
-                    self.similar_matrix[index] = self.similar_matrix[index].cuda()
+                    self.similar_matrix[idx] = self.similar_matrix[idx].cuda()
         print("mask Ready")
 
     def do_mask(self):
-        for index, item in enumerate(self.model.parameters()):
-            if index in self.mask_index:
-                a = item.data.view(self.model_length[index])
-                b = a * self.mat[index]
-                item.data = b.view(self.model_size[index])
+        for idx, item in enumerate(self.model.parameters()):
+            if idx in self.mask_idx:
+                a = item.data.view(self.model_length[idx])
+                b = a * self.mat[idx]
+                item.data = b.view(self.model_size[idx])
         print("mask Done")
 
     def do_similar_mask(self):
-        for index, item in enumerate(self.model.parameters()):
-            if index in self.mask_index:
-                a = item.data.view(self.model_length[index])
-                b = a * self.similar_matrix[index]
-                item.data = b.view(self.model_size[index])
+        for idx, item in enumerate(self.model.parameters()):
+            if idx in self.mask_idx:
+                a = item.data.view(self.model_length[idx])
+                b = a * self.similar_matrix[idx]
+                item.data = b.view(self.model_size[idx])
         print("mask similar Done")
 
     def do_grad_mask(self):
-        for index, item in enumerate(self.model.parameters()):
-            if index in self.mask_index:
-                a = item.grad.data.view(self.model_length[index])
+        for idx, item in enumerate(self.model.parameters()):
+            if idx in self.mask_idx:
+                a = item.grad.data.view(self.model_length[idx])
                 # reverse the mask of model
-                # b = a * (1 - self.mat[index])
-                b = a * self.mat[index]
-                b = b * self.similar_matrix[index]
-                item.grad.data = b.view(self.model_size[index])
+                # b = a * (1 - self.mat[idx])
+                b = a * self.mat[idx]
+                b = b * self.similar_matrix[idx]
+                item.grad.data = b.view(self.model_size[idx])
         # print("grad zero Done")
 
     def if_zero(self):
-        for index, item in enumerate(self.model.parameters()):
-            if (index in self.mask_index):
-                # if index == 0:
-                a = item.data.view(self.model_length[index])
+        for idx, item in enumerate(self.model.parameters()):
+            if (idx in self.mask_idx):
+                # if idx == 0:
+                a = item.data.view(self.model_length[idx])
                 b = a.cpu().numpy()
 
                 print(

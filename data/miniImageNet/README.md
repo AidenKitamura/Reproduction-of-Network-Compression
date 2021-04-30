@@ -1,1 +1,0 @@
-miniImageNet dataset folder
